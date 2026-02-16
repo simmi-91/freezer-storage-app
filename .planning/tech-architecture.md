@@ -342,3 +342,446 @@ The key insight is that `useItems()` already serves as the data access abstracti
 | API migration abstraction | None; `useItems` hook IS the abstraction | One file to change; abstraction layer would be premature |
 | ID strategy | Auto-increment `number` in both phases | Simple, matches MySQL AUTO_INCREMENT |
 | Categories | Keep `as const` array pattern | Already idiomatic; no changes needed |
+
+---
+
+## 7. Phase 1D — Dashboard Technical Specification
+
+### Overview
+
+The Dashboard is a stats-summary landing page that shows freezer contents at a glance: total items, expiring-soon alerts, and a category breakdown. The item list becomes a secondary view accessible via navigation. No charting libraries — all visualizations are built with plain HTML/CSS.
+
+### ViewMode Updates
+
+Add `"dashboard"` to the existing `ViewMode` discriminated union in `client/src/types/index.ts`:
+
+```ts
+export type ViewMode =
+  | { kind: "dashboard" }
+  | { kind: "list" }
+  | { kind: "add" }
+  | { kind: "edit"; itemId: number }
+  | { kind: "photo" };
+```
+
+The default view changes from `{ kind: "list" }` to `{ kind: "dashboard" }`. Update the initial state in `App.tsx` and the `history.replaceState` call accordingly.
+
+### New Components
+
+#### `Dashboard.tsx`
+
+A single component that receives items and navigation callbacks as props. No internal state beyond what's derived from props.
+
+**Props:**
+
+```ts
+interface DashboardProps {
+  items: FreezerItem[];
+  onNavigateToList: () => void;
+  onNavigateToAdd: () => void;
+  onViewExpiring: () => void;
+}
+```
+
+**Sections (top to bottom):**
+
+1. **Summary stats row** — three stat cards displayed in a horizontal row:
+   - Total items (count of `items`)
+   - Expiring soon (count of items where `getExpiryStatus` returns `"expired"`, `"expiring-soon-7"`, or `"expiring-soon-14"`)
+   - Categories in use (count of distinct `item.category` values)
+
+2. **Expiring soon list** — a compact list of items expiring within 14 days or already expired, sorted by expiry date ascending (most urgent first). Each row shows: item name, category tag, expiry badge (reuse existing badge CSS classes), and quantity. Maximum 5 items shown with a "View all" link that navigates to the item list (optionally pre-filtered, but a simple navigation to list view is sufficient for Phase 1D). If no items are expiring, show a short "All items are fresh" message.
+
+3. **Category breakdown** — a simple list/table showing each category that has items, with the item count per category. Sorted by count descending. Each row shows the category name and count. Use a simple horizontal bar (CSS `width` percentage of the max count) for a lightweight visual indicator — no charting library needed.
+
+**Rendering logic is pure derivation from `items` prop — no `useMemo` needed unless profiling shows a bottleneck (unlikely with 10-30 items).**
+
+#### `Navigation.tsx`
+
+A navigation component that renders differently based on viewport:
+- **Desktop (>768px):** A left sidebar with icon-less text links: "Dashboard", "Items", "Add Item". Fixed position, 200px wide. The main content area shifts right.
+- **Mobile (<=768px):** A bottom tab bar with two tabs: "Dashboard" and "Items". Fixed to the bottom of the viewport. The "Add Item" button remains in the header.
+
+**Props:**
+
+```ts
+interface NavigationProps {
+  currentView: ViewMode["kind"];
+  onNavigate: (mode: ViewMode) => void;
+}
+```
+
+The active link/tab is highlighted using the existing `--color-primary` CSS custom property.
+
+### Data Flow
+
+No changes to `useItems` hook. The Dashboard derives all its data from `allItems` (the unfiltered items array already exposed by the hook). Computed values:
+
+```ts
+// In Dashboard component body (or inline in JSX):
+const totalCount = items.length;
+
+const expiringItems = items
+  .filter((item) => {
+    const status = getExpiryStatus(item.expiryDate);
+    return status.status !== "good";
+  })
+  .sort((a, b) => a.expiryDate.localeCompare(b.expiryDate));
+
+const expiringCount = expiringItems.length;
+
+const categoryCounts: { category: Category; count: number }[] = [];
+const countMap = new Map<Category, number>();
+for (const item of items) {
+  countMap.set(item.category, (countMap.get(item.category) || 0) + 1);
+}
+for (const [category, count] of countMap) {
+  categoryCounts.push({ category, count });
+}
+categoryCounts.sort((a, b) => b.count - a.count);
+```
+
+No new utility functions are needed — `getExpiryStatus` and `daysUntil` from `utils/dates.ts` already cover all expiry logic. The `formatDate` function is available for display.
+
+### App.tsx Integration
+
+The `App.tsx` component changes:
+
+1. **Default view:** `useState<ViewMode>({ kind: "dashboard" })` instead of `{ kind: "list" }`.
+2. **Navigation component:** Render `<Navigation>` outside the view-switching block so it's always visible.
+3. **Dashboard rendering:** Add a `viewMode.kind === "dashboard"` branch that renders `<Dashboard>`.
+4. **Layout wrapper:** The main content area needs a CSS class that accounts for the sidebar on desktop.
+5. **History state:** Update `history.replaceState` to use `{ kind: "dashboard" }` as the initial state.
+
+```tsx
+// Simplified App.tsx structure:
+return (
+  <>
+    <header className="app-header">
+      <div className="app-container">
+        <h1>Freezer Tracker</h1>
+        {/* Add Item button visible on list and dashboard views */}
+        {(viewMode.kind === "list" || viewMode.kind === "dashboard") && (
+          <button className="btn btn-primary" onClick={() => navigate({ kind: "add" })}>
+            + Add Item
+          </button>
+        )}
+      </div>
+    </header>
+
+    <Navigation currentView={viewMode.kind} onNavigate={navigate} />
+
+    <main className="app-main app-main--with-nav">
+      <div className="app-container">
+        {viewMode.kind === "dashboard" && (
+          <Dashboard
+            items={allItems}
+            onNavigateToList={() => navigate({ kind: "list" })}
+            onNavigateToAdd={() => navigate({ kind: "add" })}
+            onViewExpiring={() => navigate({ kind: "list" })}
+          />
+        )}
+        {viewMode.kind === "list" && (
+          <>
+            <ItemList ... />
+            <ShelfLifeTable />
+          </>
+        )}
+        {/* ...other views unchanged */}
+      </div>
+    </main>
+  </>
+);
+```
+
+### Navigation State Management
+
+The existing `pushState`/`popstate` pattern continues to work. Each `navigate()` call pushes a history entry. The `handlePopState` listener already handles arbitrary `ViewMode` values from `event.state`, so no changes needed to the history management logic — it will automatically handle `{ kind: "dashboard" }` states.
+
+One consideration: when navigating from Dashboard to List and pressing back, the user returns to Dashboard. This is the correct behavior.
+
+### CSS Architecture
+
+All new styles go in `App.css` (no new CSS files). New class names follow the existing BEM-like conventions.
+
+#### Navigation styles
+
+```css
+/* --- Navigation --- */
+.nav-sidebar {
+  display: none;  /* Hidden on mobile by default */
+}
+
+.nav-bottom {
+  display: none;  /* Hidden on desktop by default */
+}
+
+/* Desktop: sidebar */
+@media (min-width: 769px) {
+  .nav-sidebar {
+    display: flex;
+    flex-direction: column;
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 200px;
+    padding-top: 72px;  /* Below header */
+    background-color: var(--color-surface);
+    border-right: 1px solid var(--color-border);
+    z-index: 5;
+  }
+
+  .nav-link {
+    display: block;
+    padding: var(--space-sm) var(--space-md);
+    font-size: var(--font-size-sm);
+    font-weight: 500;
+    color: var(--color-text-secondary);
+    text-decoration: none;
+    border: none;
+    background: none;
+    cursor: pointer;
+    text-align: left;
+    width: 100%;
+    transition: background-color var(--transition-fast), color var(--transition-fast);
+  }
+
+  .nav-link:hover {
+    background-color: var(--color-bg);
+    color: var(--color-text);
+  }
+
+  .nav-link--active {
+    color: var(--color-primary);
+    background-color: var(--color-primary-light);
+    font-weight: 600;
+  }
+
+  /* Shift main content right for sidebar */
+  .app-header,
+  .app-main--with-nav {
+    margin-left: 200px;
+  }
+}
+
+/* Mobile: bottom tabs */
+@media (max-width: 768px) {
+  .nav-bottom {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background-color: var(--color-surface);
+    border-top: 1px solid var(--color-border);
+    box-shadow: 0 -2px 4px rgba(0, 0, 0, 0.05);
+    z-index: 10;
+  }
+
+  .nav-tab {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--space-sm) 0;
+    min-height: 52px;
+    font-size: var(--font-size-sm);
+    font-weight: 500;
+    color: var(--color-text-secondary);
+    background: none;
+    border: none;
+    cursor: pointer;
+  }
+
+  .nav-tab--active {
+    color: var(--color-primary);
+    font-weight: 600;
+  }
+
+  /* Add bottom padding to main content so it's not hidden behind tab bar */
+  .app-main--with-nav {
+    padding-bottom: 64px;
+  }
+}
+```
+
+#### Dashboard styles
+
+```css
+/* --- Dashboard --- */
+.dashboard-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-md);
+  margin-bottom: var(--space-lg);
+}
+
+.stat-card {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-md);
+  text-align: center;
+}
+
+.stat-card-value {
+  font-size: var(--font-size-2xl);
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.stat-card-label {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  margin-top: var(--space-xs);
+}
+
+/* Highlight the "expiring soon" stat card when count > 0 */
+.stat-card--warning .stat-card-value {
+  color: var(--color-expiring-soon);
+}
+
+.dashboard-section {
+  margin-bottom: var(--space-lg);
+}
+
+.dashboard-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-md);
+}
+
+.dashboard-section-title {
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+}
+
+.dashboard-section-link {
+  font-size: var(--font-size-sm);
+  color: var(--color-primary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.dashboard-section-link:hover {
+  text-decoration: underline;
+}
+
+/* Expiring soon list */
+.expiring-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.expiring-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.expiring-row-name {
+  font-weight: 500;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.expiring-row-qty {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+/* Category breakdown */
+.category-breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.category-breakdown-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+.category-breakdown-name {
+  width: 120px;
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.category-breakdown-bar {
+  flex: 1;
+  height: 20px;
+  background-color: var(--color-bg);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.category-breakdown-fill {
+  height: 100%;
+  background-color: var(--color-primary);
+  border-radius: var(--radius-sm);
+  transition: width var(--transition-base);
+}
+
+.category-breakdown-count {
+  width: 32px;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  text-align: right;
+  flex-shrink: 0;
+}
+
+/* Dashboard responsive */
+@media (max-width: 768px) {
+  .dashboard-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .category-breakdown-name {
+    width: 90px;
+  }
+}
+```
+
+### File Changes Summary
+
+| File | Change |
+|------|--------|
+| `client/src/types/index.ts` | Add `{ kind: "dashboard" }` to `ViewMode` union |
+| `client/src/components/Dashboard.tsx` | **New file** — Dashboard component |
+| `client/src/components/Navigation.tsx` | **New file** — Sidebar/bottom-tab navigation |
+| `client/src/App.tsx` | Default view to `dashboard`, render Navigation and Dashboard, add `app-main--with-nav` class |
+| `client/src/App.css` | Add navigation and dashboard CSS classes |
+
+### Accessibility
+
+- Navigation uses `<nav>` element with `aria-label="Main navigation"`
+- Active nav link/tab uses `aria-current="page"`
+- Stat cards use semantic headings or `aria-label` for screen readers
+- Expiring soon list uses `<ul>` with `<li>` elements
+- Bottom tab bar buttons have descriptive `aria-label` attributes
+- All interactive elements maintain existing focus-visible styles
+
+### What NOT to Build
+
+Per CLAUDE.md explicit non-goals, the Dashboard must NOT include:
+- Charts or graphing (use simple CSS bars for category breakdown)
+- Data export buttons
+- Notification/alert system
+- Batch operations from the dashboard
+- Dark mode toggle in navigation

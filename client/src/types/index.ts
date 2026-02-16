@@ -28,6 +28,7 @@ export const CATEGORY_SHELF_LIFE: Record<Category, { min: number; max: number }>
 export type SortOption = "name" | "dateAdded" | "expiryDate" | "category";
 
 export type ViewMode =
+  | { kind: "dashboard" }
   | { kind: "list" }
   | { kind: "add" }
   | { kind: "edit"; itemId: number }

@@ -2,9 +2,9 @@
 
 ## 1. Screens & Views
 
-The app uses a **single-page layout** with three logical views. No routing library is needed in Phase 1 -- views switch via React state.
+The app uses a **single-page layout** with four logical views managed by React state (`ViewMode`). No routing library -- views switch via `ViewMode` discriminated union plus `history.pushState` for back-button support.
 
-### 1.1 Dashboard (default view)
+### 1.1 Dashboard (default landing view)
 
 The landing screen. Shows at-a-glance stats and highlights items that need attention.
 
@@ -13,8 +13,7 @@ The landing screen. Shows at-a-glance stats and highlights items that need atten
 | **Total items**        | Count of all items currently tracked                                                |
 | **Expiring soon**      | Items with expiry within 14 days, sorted soonest-first. Red badge count.            |
 | **Expired**            | Items already past expiry date. Shown separately so the user can decide to discard. |
-| **Category breakdown** | Simple bar or pill list showing count per category (e.g. "Meat: 3, Seafood: 2")     |
-| **Recently added**     | Last 5 items added, for quick reference                                             |
+| **Category breakdown** | Simple pill list showing count per category (e.g. "Meat: 3, Seafood: 2")            |
 
 ### 1.2 Item List (browse / search view)
 
@@ -31,10 +30,14 @@ Full inventory view with search, filter, and sort controls.
 A single form component used for both adding and editing.
 
 -   **Fields**: name (text), category (select from CATEGORIES), quantity (number), unit (text with common suggestions: pcs, bags, kg), date added (date, defaults to today), expiry date (date), notes (textarea, optional)
--   Opens as a **slide-in panel from the right** on desktop or a **full-screen overlay** on mobile
+-   Full-screen overlay on mobile, centered modal on desktop (already implemented)
 -   Pre-filled when editing an existing item
 -   "Save" and "Cancel" buttons at the bottom
 -   Minimal required fields: name, category, quantity, unit, expiry date
+
+### 1.4 Photo Capture (already implemented)
+
+Scan food items via photo upload for AI-assisted identification.
 
 ---
 
@@ -42,83 +45,148 @@ A single form component used for both adding and editing.
 
 ### 2.1 Adding a New Item (primary flow -- minimize friction)
 
-1. User clicks the prominent **"+ Add Item"** button (always visible in header/toolbar)
-2. Form panel slides in with sensible defaults:
+1. User clicks the prominent **"+ Add Item"** button (visible in header on both dashboard and list views)
+2. Form opens with sensible defaults:
     - Date added = today
     - Quantity = 1
     - Unit = "pcs"
-    - Category = last used category (stored in local state)
 3. User types name, selects category, adjusts quantity/unit if needed, sets expiry date
-4. User clicks "Save" -- item appears in list, panel closes
-5. Optional: toast notification "Item added" with undo action (3 second timeout)
-
-**Quick-add shortcut**: On the dashboard, show a compact inline form with just name + category + expiry. Quantity defaults to 1 pcs. For rapid entry when unloading groceries.
+4. User clicks "Save" -- item appears in list, form closes
 
 ### 2.2 Finding an Item
 
-1. User navigates to Item List view (or is already there)
+1. User clicks "Items" in the sidebar (desktop) or bottom tab (mobile)
 2. Types in SearchBar -- filters in real-time by name and notes (already implemented in useItems)
 3. Optionally clicks a category pill to narrow results
 4. Optionally changes sort order (e.g. "Expiry: soonest first" to find what to use next)
 
 ### 2.3 Editing an Item
 
-1. User clicks "Edit" button on an item card (pencil icon)
-2. Same form panel opens, pre-populated with current values
+1. User clicks "Edit" button on an item card (already implemented)
+2. Same form opens, pre-populated with current values
 3. User modifies fields (common: update quantity after partial use, extend expiry)
 4. Clicks "Save" -- item updates in place
 
-**Quick quantity update**: Each item card has a small "-" / "+" stepper on the quantity. Tapping "-" when quantity is 1 prompts "Remove item?" confirmation.
+**Quick quantity update**: Each item card has a small "-" / "+" stepper on the quantity. Tapping "-" when quantity is 1 prompts "Remove item?" confirmation. (Already implemented)
 
 ### 2.4 Removing an Item
 
-1. User clicks "Remove" button on an item card (trash icon)
-2. Confirmation dialog: "Remove [item name] from freezer?"
-3. On confirm, item is deleted with toast "Item removed" + undo (3 seconds)
+1. User clicks "Delete" button on an item card
+2. Confirmation dialog: "Remove [item name] from the freezer?"
+3. On confirm, item is deleted (already implemented)
 
-**Batch remove**: Checkbox appears on each card when user enters "select mode" (via a "Select" button in the toolbar). A floating action bar shows count and "Remove selected" button.
+### 2.5 Dashboard Interactions
+
+1. User lands on Dashboard (default view)
+2. **Expiring Soon stat card** -- clicking navigates to Item List sorted by expiry date (soonest first)
+3. **Expired stat card** -- clicking navigates to Item List sorted by expiry date (soonest first)
+4. **Category breakdown pill** -- clicking navigates to Item List filtered to that category
+5. **Expiring-soon list row** -- clicking "Edit" opens the edit form for that item; clicking "Delete" removes with confirmation
+6. **"View all items" link** -- navigates to Item List
 
 ---
 
 ## 3. Dashboard Design
 
-### 3.1 Stats Summary (top row, 3-4 cards)
+### 3.1 Stats Summary (top row, 3 cards)
 
-| Stat            | Display                                     |
-| --------------- | ------------------------------------------- |
-| Total items     | Large number + "items in freezer"           |
-| Expiring soon   | Count + red/orange badge, "within 14 days"  |
-| Categories used | Count of distinct categories with items     |
-| Oldest item     | Name + age in days, nudge to use or discard |
+Displayed as a horizontal row of stat cards at the top of the dashboard. Each card uses the existing `.card` style with a large number and descriptive label.
 
-### 3.2 Expiry Alerts
+| Stat              | Display                                          | Click action                              |
+| ----------------- | ------------------------------------------------ | ----------------------------------------- |
+| **Total items**   | Large number + "items in freezer"                | Navigate to Item List (no filter)         |
+| **Expiring soon** | Count + orange/red badge, "within 14 days"       | Navigate to Item List, sort by expiryDate |
+| **Expired**       | Count + red badge, "past expiry"                 | Navigate to Item List, sort by expiryDate |
 
--   **"Expiring soon" = within 14 days** from today
--   Shown as a prominent list/section on the dashboard
--   Each row: item name, expiry date, days remaining, category tag, quick "Remove" button
--   Sorted by soonest expiry first
--   If nothing is expiring soon, show a friendly "All clear" message
+Layout:
+- Desktop: 3 cards in a single row, equal width (`grid-template-columns: repeat(3, 1fr)`)
+- Mobile: 3 cards in a single row, compressed. Below 480px: stack vertically
+
+Styling:
+- Each stat card uses `background-color: var(--color-surface)` with `var(--shadow-sm)` and `var(--radius-md)`
+- The large number is `font-size: 2rem; font-weight: 700`
+- The label beneath is `font-size: var(--font-size-sm); color: var(--color-text-secondary)`
+- Expiring soon card: number uses `color: var(--color-expiring-soon)` (#F59E0B)
+- Expired card: number uses `color: var(--color-expired)` (#DC2626)
+- Total items card: number uses `color: var(--color-primary)` (#2563EB)
+- Cards are clickable -- `cursor: pointer` and hover shows `var(--shadow-md)`
+
+### 3.2 Expiring Soon List
+
+Displayed below the stat cards. Shows items expiring within 14 days AND items already expired, grouped into two sections.
+
+**Section: "Expired" (shown only if expired items exist)**
+- Red section header: "Expired" with count badge
+- Each row: item name (bold), category tag, "Expired" badge (red), Edit button, Delete button
+- Sorted by expiry date (most recently expired first)
+
+**Section: "Expiring Soon" (shown only if expiring items exist)**
+- Orange section header: "Expiring Soon" with count badge
+- Each row: item name (bold), category tag, expiry badge (color-coded per existing scheme), Edit button, Delete button
+- Sorted by expiry date (soonest first)
+
+**Empty state**: If no expired or expiring-soon items, show: "All clear -- nothing expiring soon" with a green checkmark
+
+Row layout:
+```
++------------------------------------------------------------------+
+| Chicken Breast    [Meat]     Expires in 3 days    [Edit] [Delete] |
++------------------------------------------------------------------+
+```
+
+- Desktop: single-line rows with item name, category tag, expiry badge, and action buttons aligned in a flex row
+- Mobile: rows wrap -- name + category on first line, expiry badge + actions on second line
+- Each row is a `.card`-style element with `padding: var(--space-sm) var(--space-md)`
+- Rows have subtle bottom border (`var(--color-border)`) except the last one
+- Maximum 10 items shown; if more, show "View all N items" link that navigates to the Item List sorted by expiry
 
 ### 3.3 Category Breakdown
 
--   Horizontal bar chart or simple list with count badges
--   Categories with 0 items are hidden
--   Clicking a category navigates to Item List view filtered to that category
+Displayed below the expiring-soon list. Shows how many items are in each category.
 
-### 3.4 Recently Added
+Layout: horizontal row of category pills (reusing the existing `.category-pill` styling from CategoryFilter), each showing `Category: N` where N is the item count. Categories with 0 items are hidden.
 
--   Last 5 items, shown as compact rows: name, date added, category
--   Provides context for "what did I just put in the freezer?"
+- Clicking a category pill navigates to the Item List view filtered to that category
+- Desktop: wrapping flex row
+- Mobile: horizontal scroll (same as existing `.category-filter` mobile behavior)
+- Section heading: "By Category" in `font-size: var(--font-size-sm); font-weight: 600; color: var(--color-text-secondary)`
+
+### 3.4 Dashboard Empty State
+
+When the freezer has zero items:
+
+```
+Your freezer is empty
+
+Add your first item to start tracking.
+
+[+ Add Item]
+```
+
+- Uses existing `.empty-state` styling
+- The "Add Item" button uses `.btn-primary`
+- Stat cards still render showing "0" for all values (not hidden)
 
 ---
 
 ## 4. Layout & Navigation
 
-### 4.1 Single-page app, no router
+### 4.1 ViewMode Update
 
-For Phase 1, use React state to switch between views. The app is simple enough that a router adds unnecessary complexity. Views: "dashboard", "items", "add/edit form".
+The `ViewMode` discriminated union needs a new `"dashboard"` kind:
 
-### 4.2 Layout Structure
+```typescript
+type ViewMode =
+  | { kind: "dashboard" }
+  | { kind: "list" }
+  | { kind: "add" }
+  | { kind: "edit"; itemId: number }
+  | { kind: "photo" };
+```
+
+The default/initial ViewMode changes from `{ kind: "list" }` to `{ kind: "dashboard" }`.
+
+### 4.2 Layout Structure (Desktop, >= 769px)
 
 ```
 +---------------------------------------------+
@@ -131,17 +199,69 @@ For Phase 1, use React state to switch between views. The app is simple enough t
 +--------+------------------------------------+
 ```
 
--   **Header**: Fixed top bar. App name "Freezer Tracker" on the left, "+ Add Item" button on the right.
--   **Sidebar** (desktop only): Two nav links -- "Dashboard" and "Items". Shows category quick-links below nav.
--   **Mobile**: Sidebar collapses to a bottom tab bar with two tabs: Dashboard, Items. The "+ Add Item" button becomes a floating action button (FAB) in the bottom-right corner.
+**Header**: Stays as the existing sticky top bar.
+- Left: "Freezer Tracker" title
+- Right: "Scan Food" button + "+ Add Item" button (shown on both dashboard and list views)
 
-### 4.3 Mobile Responsiveness
+**Sidebar** (desktop only, >= 769px):
+- Fixed to the left, below the header
+- Width: 200px
+- Background: `var(--color-surface)` with right border `var(--color-border)`
+- Contains two nav items as a vertical list:
+  1. "Dashboard" (icon: grid/home -- use text-only, no icon library)
+  2. "Items" (icon: list -- use text-only, no icon library)
+- Active nav item: `background-color: var(--color-primary-light); color: var(--color-primary); font-weight: 600`
+- Inactive nav item: `color: var(--color-text-secondary)` with hover `background-color: var(--color-bg)`
+- Each nav item is a `<button>` with `role="tab"` and `aria-selected` for accessibility
+- Nav items have `padding: var(--space-sm) var(--space-md); border-radius: var(--radius-md)`
+- Below the nav items, show item count: "N items total" in `font-size: var(--font-size-sm); color: var(--color-text-muted)`
 
--   Breakpoint at 768px
--   Below 768px: single column layout, bottom tab navigation, full-screen form overlay
--   Above 768px: sidebar + main content, slide-in form panel
--   Item cards stack single-column on mobile, 2-3 columns on desktop
--   Category filter pills scroll horizontally on mobile
+**Main content**: Shifts right by 200px (sidebar width) on desktop. Uses `margin-left: 200px` or CSS Grid layout.
+
+### 4.3 Layout Structure (Mobile, <= 768px)
+
+```
++---------------------------------------------+
+|  Header: App title + "Add Item" button       |
++---------------------------------------------+
+|                                             |
+|   Main content area                         |
+|   (Dashboard or Item List)                  |
+|                                             |
++---------------------------------------------+
+|  [Dashboard]  [Items]                        |
++---------------------------------------------+
+```
+
+**Bottom Tab Bar** (mobile only, <= 768px):
+- Fixed to the bottom of the viewport
+- Height: 56px (comfortable touch target)
+- Background: `var(--color-surface)` with top border `var(--color-border)` and `var(--shadow-sm)` (inverted, shadow goes up)
+- Two tabs, evenly spaced: "Dashboard" and "Items"
+- Each tab: vertically stacked label text, centered
+- Active tab: `color: var(--color-primary); font-weight: 600`
+- Inactive tab: `color: var(--color-text-secondary)`
+- Tab buttons use `role="tab"` and `aria-selected` for accessibility
+- `z-index: 20` to sit above content
+
+**Main content**: Add `padding-bottom: 72px` (56px tab bar + 16px spacing) on mobile to prevent content from being hidden behind the tab bar.
+
+**Header on mobile**: The "+ Add Item" and "Scan Food" buttons remain in the header (no floating action button -- keep it simple).
+
+### 4.4 Responsive Breakpoints
+
+| Breakpoint | Layout behavior                                             |
+| ---------- | ----------------------------------------------------------- |
+| >= 769px   | Sidebar nav (left) + main content (right), stat cards in row |
+| <= 768px   | Bottom tab bar, no sidebar, stat cards in row (compressed)  |
+| <= 480px   | Stat cards stack vertically, expiring list rows wrap         |
+
+### 4.5 Navigation State & Back Button
+
+- Navigation between Dashboard and Items is tracked via `ViewMode` and `history.pushState` (already implemented pattern)
+- Pressing browser back button navigates between Dashboard <-> Items as expected
+- The initial `history.replaceState` should set `{ kind: "dashboard" }` instead of `{ kind: "list" }`
+- Add/Edit forms push a new history entry (already works)
 
 ---
 
@@ -150,48 +270,66 @@ For Phase 1, use React state to switch between views. The app is simple enough t
 ```
 App
 +-- Header
-|   +-- AppTitle
-|   +-- AddItemButton
+|   +-- AppTitle ("Freezer Tracker")
+|   +-- ScanFoodButton (when on dashboard or list view)
+|   +-- AddItemButton (when on dashboard or list view)
 |
-+-- Sidebar (desktop) / BottomTabs (mobile)
-|   +-- NavLink ("Dashboard")
-|   +-- NavLink ("Items")
++-- Sidebar (desktop >= 769px)
+|   +-- NavButton ("Dashboard", active state)
+|   +-- NavButton ("Items", active state)
+|   +-- ItemCountLabel ("N items total")
+|
++-- BottomTabs (mobile <= 768px)
+|   +-- TabButton ("Dashboard", active state)
+|   +-- TabButton ("Items", active state)
 |
 +-- MainContent
-|   +-- Dashboard (when view === "dashboard")
+|   +-- Dashboard (when viewMode.kind === "dashboard")
 |   |   +-- StatsRow
 |   |   |   +-- StatCard (total items)
 |   |   |   +-- StatCard (expiring soon)
-|   |   |   +-- StatCard (categories)
-|   |   |   +-- StatCard (oldest item)
+|   |   |   +-- StatCard (expired)
 |   |   +-- ExpiringList
-|   |   |   +-- ExpiringItem (per item)
+|   |   |   +-- SectionHeader ("Expired")
+|   |   |   +-- ExpiringRow (per expired item)
+|   |   |   +-- SectionHeader ("Expiring Soon")
+|   |   |   +-- ExpiringRow (per expiring-soon item)
 |   |   +-- CategoryBreakdown
-|   |   +-- RecentlyAdded
+|   |   |   +-- CategoryPill (per category with items)
+|   |   +-- DashboardEmptyState (when 0 items)
 |   |
-|   +-- ItemListView (when view === "items")
+|   +-- ItemList (when viewMode.kind === "list")
 |   |   +-- SearchBar          (already built)
 |   |   +-- CategoryFilter     (already built)
-|   |   +-- SortControl
+|   |   +-- SortControl        (already built)
 |   |   +-- ItemGrid
-|   |       +-- ItemCard (per item)
-|   |           +-- QuantityStepper
-|   |           +-- EditButton
-|   |           +-- RemoveButton
+|   |       +-- ItemCard (per item, already built)
 |   |
-|   +-- ItemFormPanel (slide-in / overlay)
-|       +-- ItemForm
-|           +-- (form fields)
-|           +-- SaveButton
-|           +-- CancelButton
+|   +-- ItemForm (when viewMode.kind === "add" or "edit")
+|   |
+|   +-- PhotoCapture (when viewMode.kind === "photo")
 ```
+
+### New Components for Phase 1D
+
+| Component            | Location                              | Responsibility                                           |
+| -------------------- | ------------------------------------- | -------------------------------------------------------- |
+| `Dashboard`          | `client/src/components/Dashboard.tsx` | Main dashboard view; computes stats, renders sub-sections |
+| `StatCard`           | Inline within `Dashboard.tsx`         | Single stat display (number + label), clickable           |
+| `ExpiringList`       | Inline within `Dashboard.tsx`         | Lists expired and expiring-soon items with actions        |
+| `CategoryBreakdown`  | Inline within `Dashboard.tsx`         | Category pills with counts, clickable                    |
+| `Sidebar`            | `client/src/components/Sidebar.tsx`   | Desktop sidebar navigation                               |
+| `BottomTabs`         | `client/src/components/BottomTabs.tsx`| Mobile bottom tab navigation                             |
+
+**Note**: `StatCard`, `ExpiringList`, and `CategoryBreakdown` can be defined as local components within `Dashboard.tsx` rather than separate files, since they are only used there. Keep it simple.
 
 ### Data Flow
 
--   `useItems` hook lives at the `App` level and provides all state + CRUD functions
--   `App` passes relevant props down to each view
--   Active view tracked by `useState<"dashboard" | "items">("dashboard")`
--   Form panel state: `useState<{ mode: "add" } | { mode: "edit"; item: FreezerItem } | null>(null)`
+-   `useItems` hook lives at the `App` level and provides all state + CRUD functions (unchanged)
+-   `App` passes `allItems` to `Dashboard` which derives stats internally
+-   `Dashboard` receives callbacks for navigation: `onNavigateToList(category?: Category, sortBy?: SortOption)` and `onEdit(id: number)` and `onDelete(id: number)`
+-   Active page (dashboard vs. items) is derived from `viewMode.kind`
+-   Sidebar/BottomTabs receive active page and a callback to switch views
 -   No global state library needed -- prop drilling is fine for this app size
 
 ---
@@ -200,7 +338,7 @@ App
 
 ### 6.1 Color-Coded Expiry Warnings
 
-Applied to expiry dates on item cards and list rows:
+Applied to expiry dates on item cards, dashboard stat cards, and expiring-soon list rows:
 
 | Condition                   | Color            | Label               |
 | --------------------------- | ---------------- | ------------------- |
@@ -209,49 +347,62 @@ Applied to expiry dates on item cards and list rows:
 | Expiring within 14 days     | Yellow (#EAB308) | "Expires in X days" |
 | More than 14 days remaining | Green (#22C55E)  | "Good until [date]" |
 
-These colors appear as a small badge/dot on item cards and in the expiry text.
+These colors appear as a small badge/dot on item cards and in the expiry text. (Already implemented via `getExpiryStatus()` in `utils/dates.ts`)
 
-### 6.2 Quick-Add for Common Items
+### 6.2 Quantity Stepper on Cards
 
--   On the dashboard, provide a "Quick Add" section with a compact inline form
--   Just name, category dropdown, and expiry date -- saves with defaults for the rest
--   Designed for the scenario: "I just bought groceries and need to log 8 things fast"
-
-### 6.3 Batch Operations
-
--   "Select" mode toggle in the Item List toolbar
--   Checkboxes appear on each card
--   Floating action bar at bottom: "[N] selected -- Remove All"
--   Useful when cleaning out the freezer
-
-### 6.4 Quantity Stepper on Cards
-
--   Small "- / +" buttons directly on item cards for adjusting quantity without opening the edit form
+-   Small "- / +" buttons directly on item cards for adjusting quantity without opening the edit form (already implemented in `ItemCard.tsx`)
 -   Tapping "-" at quantity 1 triggers a removal confirmation
 -   Saves a round-trip to the edit form for the most common update
 
-### 6.5 Smart Defaults
+### 6.3 Smart Defaults
 
 -   "Date added" defaults to today
 -   "Quantity" defaults to 1
--   "Unit" defaults to "pcs" but remembers last used unit per category
--   "Category" defaults to last used category
--   These reduce the number of fields the user has to actively fill
+-   "Unit" defaults to "pcs"
+-   Category auto-selects expiry date based on shelf life max
+-   These reduce the number of fields the user has to actively fill (already implemented)
 
-### 6.6 Empty States
+### 6.4 Empty States
 
--   First visit / no items: friendly illustration + "Add your first item" CTA
--   No search results: "No items match your search" with a clear-filter button
--   No expiring items on dashboard: "Nothing expiring soon -- you're all set"
+-   **Dashboard, no items**: "Your freezer is empty" + "Add your first item to start tracking" + Add Item button
+-   **Dashboard, no expiring items**: "All clear -- nothing expiring soon" with green accent
+-   **Item List, no items**: "Your freezer is empty" + Add Item CTA (already implemented)
+-   **Item List, no search results**: "No items match your search" with clear-filter button (already implemented)
 
-### 6.7 Visual Design Notes
+### 6.5 Visual Design Notes
 
 -   Clean, minimal aesthetic with plenty of whitespace
--   Use CSS custom properties for the color palette (easy theming later)
+-   Use CSS custom properties for the color palette (already in place in `App.css`)
 -   System font stack for performance
--   No CSS framework needed -- plain CSS modules or a single stylesheet
+-   No CSS framework -- plain single stylesheet (`App.css`)
 -   Card-based layout with subtle shadows and rounded corners
--   Category pills use soft background colors per category for visual distinction
+-   Category pills use the existing `.category-pill` / `.category-tag` styling
+-   Dashboard sections separated by `margin-bottom: var(--space-xl)` for clear visual grouping
+
+---
+
+## 7. Accessibility
+
+### 7.1 Navigation
+
+- Sidebar nav items use `<nav>` landmark with `aria-label="Main navigation"`
+- Nav items use `role="tab"` with `aria-selected="true|false"`
+- The nav group uses `role="tablist"`
+- Bottom tabs mirror the same ARIA pattern
+- Active view is the "tabpanel" -- use `role="tabpanel"` on the main content area
+
+### 7.2 Dashboard
+
+- Stat cards are `<button>` elements (since they are clickable) with descriptive `aria-label` (e.g. "3 items expiring soon, view details")
+- Expiring list uses `<ul>` with `<li>` for each item
+- Section headings ("Expired", "Expiring Soon", "By Category") use `<h2>` within the dashboard
+- Category breakdown pills are `<button>` elements with `aria-label` (e.g. "Meat: 3 items, view in list")
+
+### 7.3 Focus Management
+
+- When switching from Dashboard to Item List (or vice versa), focus moves to the main content area heading
+- Existing focus indicator styles (`:focus-visible` with `outline: 2px solid var(--color-primary)`) apply to all new interactive elements
 
 ---
 
@@ -260,10 +411,15 @@ These colors appear as a small badge/dot on item cards and in the expiry text.
 1. **Single-page with state-based views** -- no router in Phase 1
 2. **Dashboard as landing page** -- expiry alerts front and center
 3. **14-day threshold** for "expiring soon"
-4. **Slide-in panel** for add/edit forms (not a separate page)
-5. **Quick-add on dashboard** for low-friction bulk entry
-6. **Quantity stepper on cards** for the most common edit
-7. **Batch remove** for freezer cleanout scenarios
-8. **Color-coded expiry** (red/orange/yellow/green) throughout
-9. **Mobile-first responsive** -- bottom tabs, single column, FAB
-10. **Existing components** (SearchBar, CategoryFilter, useItems) slot directly into this design with no changes needed
+4. **3 stat cards** -- total items, expiring soon, expired (dropped "oldest item" and "categories used" to keep it focused)
+5. **Clickable stat cards and category pills** navigate to filtered/sorted Item List
+6. **Sidebar on desktop, bottom tabs on mobile** -- two nav destinations (Dashboard, Items)
+7. **Sidebar width: 200px**, fixed, simple text labels (no icon library)
+8. **Bottom tabs height: 56px**, fixed to bottom, two tabs
+9. **No quick-add form** -- explicitly listed as a non-goal in CLAUDE.md
+10. **No batch operations** -- explicitly listed as a non-goal in CLAUDE.md
+11. **No toast notifications** -- explicitly listed as a non-goal in CLAUDE.md
+12. **Color-coded expiry** (red/orange/yellow/green) throughout, reusing existing `getExpiryStatus()`
+13. **Existing components** (SearchBar, CategoryFilter, SortControl, ItemCard, ItemForm, useItems) are reused without modification
+14. **Dashboard component** computes all stats from `allItems` -- no new hooks or state needed
+15. **Mobile-first responsive** -- same 768px breakpoint as existing code, with 480px added for stat card stacking

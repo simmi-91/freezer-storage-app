@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
-import type { ViewMode, FreezerItem } from "./types";
+import type { ViewMode, FreezerItem, Category } from "./types";
 import { useItems } from "./hooks/useItems";
+import { Navigation } from "./components/Navigation";
+import { Dashboard } from "./components/Dashboard";
 import { ItemList } from "./components/ItemList";
 import { ItemForm } from "./components/ItemForm";
 import { PhotoCapture } from "./components/PhotoCapture";
@@ -23,7 +25,7 @@ function App() {
     deleteItem,
   } = useItems();
 
-  const [viewMode, setViewMode] = useState<ViewMode>({ kind: "list" });
+  const [viewMode, setViewMode] = useState<ViewMode>({ kind: "dashboard" });
 
   const navigate = useCallback((mode: ViewMode) => {
     setViewMode(mode);
@@ -32,14 +34,14 @@ function App() {
 
   useEffect(() => {
     // Set initial history state
-    window.history.replaceState({ viewMode: { kind: "list" } }, "");
+    window.history.replaceState({ viewMode: { kind: "dashboard" } }, "");
 
     function handlePopState(event: PopStateEvent) {
       const state = event.state as { viewMode?: ViewMode } | null;
       if (state?.viewMode) {
         setViewMode(state.viewMode);
       } else {
-        setViewMode({ kind: "list" });
+        setViewMode({ kind: "dashboard" });
       }
     }
 
@@ -64,6 +66,18 @@ function App() {
   }
 
   function handleCancel() {
+    window.history.back();
+  }
+
+  function handleNavigateToList(options?: { category?: Category; sort?: "expiryDate" }) {
+    if (options?.category) {
+      setSelectedCategory(options.category);
+    } else {
+      setSelectedCategory("All");
+    }
+    if (options?.sort) {
+      setSortBy(options.sort);
+    }
     navigate({ kind: "list" });
   }
 
@@ -72,12 +86,14 @@ function App() {
       ? allItems.find((item) => item.id === viewMode.itemId)
       : undefined;
 
+  const showHeaderButtons = viewMode.kind === "list" || viewMode.kind === "dashboard";
+
   return (
     <>
       <header className="app-header">
         <div className="app-container">
           <h1>Freezer Tracker</h1>
-          {viewMode.kind === "list" && (
+          {showHeaderButtons && (
             <>
               <button
                 className="btn btn-ghost"
@@ -96,8 +112,24 @@ function App() {
         </div>
       </header>
 
-      <main className="app-main">
+      <Navigation
+        currentView={viewMode.kind}
+        totalItems={allItems.length}
+        onNavigate={navigate}
+      />
+
+      <main className="app-main app-main--with-nav" role="tabpanel">
         <div className="app-container">
+          {viewMode.kind === "dashboard" && (
+            <Dashboard
+              items={allItems}
+              onNavigateToList={handleNavigateToList}
+              onNavigateToAdd={() => navigate({ kind: "add" })}
+              onEdit={handleEdit}
+              onDelete={deleteItem}
+            />
+          )}
+
           {viewMode.kind === "list" && (
             <>
               <ItemList

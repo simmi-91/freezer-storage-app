@@ -853,6 +853,230 @@ html, body {
   flex-shrink: 0;
 }
 
+/* --- Navigation: Sidebar (desktop) --- */
+.nav-sidebar {
+  display: none;
+}
+
+.nav-bottom {
+  display: none;
+}
+
+@media (min-width: 769px) {
+  .nav-sidebar {
+    display: flex;
+    flex-direction: column;
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 200px;
+    padding-top: 72px;
+    background-color: var(--color-surface);
+    border-right: 1px solid var(--color-border);
+    z-index: 5;
+  }
+
+  .nav-sidebar-links {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+    padding: var(--space-md);
+  }
+
+  .nav-link {
+    display: block;
+    padding: var(--space-sm) var(--space-md);
+    font-size: var(--font-size-sm);
+    font-weight: 500;
+    color: var(--color-text-secondary);
+    text-decoration: none;
+    border: none;
+    background: none;
+    cursor: pointer;
+    text-align: left;
+    width: 100%;
+    border-radius: var(--radius-md);
+    transition: background-color var(--transition-fast), color var(--transition-fast);
+  }
+
+  .nav-link:hover {
+    background-color: var(--color-bg);
+    color: var(--color-text);
+  }
+
+  .nav-link:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+
+  .nav-link--active {
+    color: var(--color-primary);
+    background-color: var(--color-primary-light);
+    font-weight: 600;
+  }
+
+  .nav-sidebar-count {
+    padding: var(--space-sm) var(--space-lg);
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+  }
+
+  .app-header,
+  .app-main--with-nav {
+    margin-left: 200px;
+  }
+}
+
+/* --- Dashboard --- */
+.dashboard-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-md);
+  margin-bottom: var(--space-xl);
+}
+
+.stat-card {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-md);
+  text-align: center;
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  transition: box-shadow var(--transition-base);
+}
+
+.stat-card:hover {
+  box-shadow: var(--shadow-md);
+}
+
+.stat-card:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.stat-card-value {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.stat-card-value--primary {
+  color: var(--color-primary);
+}
+
+.stat-card--warning .stat-card-value {
+  color: var(--color-expiring-soon);
+}
+
+.stat-card--danger .stat-card-value {
+  color: var(--color-expired);
+}
+
+.stat-card-label {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  margin-top: var(--space-xs);
+}
+
+.dashboard-section {
+  margin-bottom: var(--space-xl);
+}
+
+.dashboard-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-md);
+}
+
+.dashboard-section-title {
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+}
+
+.dashboard-section-link {
+  font-size: var(--font-size-sm);
+  color: var(--color-primary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.dashboard-section-link:hover {
+  text-decoration: underline;
+}
+
+.dashboard-section-link:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.dashboard-all-clear {
+  text-align: center;
+  padding: var(--space-lg) var(--space-md);
+  color: var(--color-good);
+  font-weight: 500;
+}
+
+/* Expiring list */
+.expiring-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  list-style: none;
+}
+
+.expiring-section-header {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-xs) 0;
+}
+
+.expiring-section-header--expired {
+  color: var(--color-expired);
+}
+
+.expiring-section-header--warning {
+  color: var(--color-expiring-soon);
+}
+
+.expiring-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.expiring-row-name {
+  font-weight: 500;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.expiring-row-qty {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+.expiring-row-actions {
+  display: flex;
+  gap: var(--space-xs);
+  flex-shrink: 0;
+}
+
 /* --- Responsive --- */
 @media (max-width: 768px) {
   /* Layout */
@@ -961,5 +1185,69 @@ html, body {
   /* Empty state — less vertical padding */
   .empty-state {
     padding: var(--space-lg) var(--space-sm);
+  }
+
+  /* Mobile bottom tabs */
+  .nav-bottom {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background-color: var(--color-surface);
+    border-top: 1px solid var(--color-border);
+    box-shadow: 0 -2px 4px rgba(0, 0, 0, 0.05);
+    z-index: 20;
+  }
+
+  .nav-tab {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--space-sm) 0;
+    min-height: 56px;
+    font-size: var(--font-size-sm);
+    font-weight: 500;
+    color: var(--color-text-secondary);
+    background: none;
+    border: none;
+    cursor: pointer;
+  }
+
+  .nav-tab:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: -2px;
+  }
+
+  .nav-tab--active {
+    color: var(--color-primary);
+    font-weight: 600;
+  }
+
+  /* Add bottom padding for tab bar */
+  .app-main--with-nav {
+    padding-bottom: 72px;
+  }
+
+  /* Dashboard stats — stack on small screens */
+  .dashboard-stats {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  /* Expiring row wraps on mobile */
+  .expiring-row {
+    flex-wrap: wrap;
+  }
+
+  .expiring-row-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
+
+@media (max-width: 480px) {
+  .dashboard-stats {
+    grid-template-columns: 1fr;
   }
 }
