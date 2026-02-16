@@ -1,5 +1,5 @@
 import type { FreezerItem, Category } from "../types";
-import { getExpiryStatus, formatDate } from "../utils/dates";
+import { getExpiryStatus } from "../utils/dates";
 
 interface DashboardProps {
   items: FreezerItem[];
