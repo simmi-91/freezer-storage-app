@@ -15,7 +15,7 @@ A web application to manage and track the contents of a home freezer. Users can 
 
 ## Current Status
 
-**Phase 1C — Polish & Validation** (complete)
+**Phase 1D — Dashboard** (complete)
 
 ## Roadmap
 
@@ -50,11 +50,11 @@ A web application to manage and track the contents of a home freezer. Users can 
 -   [x] Back-button support via `history.pushState` / `popstate`
 -   [x] Only show categories that have items in CategoryFilter
 
-### Phase 1D — Dashboard (stretch goal)
+### Phase 1D — Dashboard (complete)
 
--   [ ] `Dashboard` component — stats summary, expiring-soon list, category breakdown
--   [ ] Make dashboard the landing page, item list as second view
--   [ ] Sidebar navigation (desktop) / bottom tabs (mobile)
+-   [x] `Dashboard` component — stats summary, expiring-soon list, category breakdown
+-   [x] Make dashboard the landing page, item list as second view
+-   [x] Sidebar navigation (desktop) / bottom tabs (mobile)
 
 ### Phase 2 — Backend & Database
 
