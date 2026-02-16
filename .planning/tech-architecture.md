@@ -785,3 +785,456 @@ Per CLAUDE.md explicit non-goals, the Dashboard must NOT include:
 - Notification/alert system
 - Batch operations from the dashboard
 - Dark mode toggle in navigation
+
+---
+
+## 8. Phase 2 — Backend & Database
+
+### Overview
+
+Phase 2 replaces localStorage persistence with a MySQL 8.x database accessed through an Express REST API. The existing server (which already has the `/api/identify-food` route for photo capture) is extended with CRUD routes for items. The frontend `useItems` hook is rewritten to use `fetch` calls instead of localStorage, and components gain loading/error states.
+
+### MySQL Database
+
+#### Connection Pool (`server/src/lib/database.ts`)
+
+Use `mysql2/promise` with a connection pool. The pool is created once at module scope and exported for use by route handlers.
+
+```ts
+import mysql from "mysql2/promise";
+
+export const pool = mysql.createPool({
+  host: process.env.DB_HOST || "localhost",
+  port: Number(process.env.DB_PORT) || 3306,
+  user: process.env.DB_USER || "root",
+  password: process.env.DB_PASSWORD || "",
+  database: process.env.DB_NAME || "freezer_storage",
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0,
+});
+```
+
+Configuration via environment variables in `.env` (not committed). Update `.env.example` to include:
+
+```
+GEMINI_API_KEY=your_key_here
+DB_HOST=localhost
+DB_PORT=3306
+DB_USER=root
+DB_PASSWORD=
+DB_NAME=freezer_storage
+```
+
+#### Database Initialization (`server/src/lib/init-db.ts`)
+
+A function that runs `CREATE DATABASE IF NOT EXISTS` and `CREATE TABLE IF NOT EXISTS` on server startup. No migration tool — the schema is simple enough for a single idempotent script.
+
+```ts
+import { pool } from "./database.js";
+
+export async function initDb(): Promise<void> {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS items (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      name VARCHAR(255) NOT NULL,
+      category VARCHAR(50) NOT NULL,
+      quantity INT NOT NULL DEFAULT 1,
+      unit VARCHAR(50) NOT NULL DEFAULT 'pcs',
+      date_added DATE DEFAULT NULL,
+      expiry_date DATE NOT NULL,
+      notes TEXT NOT NULL DEFAULT '',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `);
+}
+```
+
+Key decisions:
+- `date_added` is `DATE DEFAULT NULL` because it can be unknown (empty string in the frontend maps to `NULL` in MySQL).
+- `expiry_date` is `DATE NOT NULL` since it is a required field.
+- `quantity` is `INT` — sufficient for a home freezer app. Fractional quantities are not needed.
+- `notes` is `TEXT NOT NULL DEFAULT ''` — never null, consistent with the frontend model.
+- `created_at` / `updated_at` are server-side timestamps for housekeeping. They are **not** exposed to the frontend.
+- Column names use `snake_case` per MySQL convention. The API layer maps to/from `camelCase`.
+
+#### snake_case to camelCase Mapping
+
+MySQL columns use `snake_case`. The frontend `FreezerItem` interface uses `camelCase`. The mapping happens in the route handlers (not in a generic middleware).
+
+```ts
+// Row from MySQL -> FreezerItem for the frontend
+function rowToItem(row: any): FreezerItem {
+  return {
+    id: row.id,
+    name: row.name,
+    category: row.category,
+    quantity: row.quantity,
+    unit: row.unit,
+    dateAdded: row.date_added ? formatDateISO(row.date_added) : "",
+    expiryDate: formatDateISO(row.expiry_date),
+    notes: row.notes,
+  };
+}
+
+// FreezerItem from the frontend -> column values for MySQL
+function itemToRow(item: Omit<FreezerItem, "id">) {
+  return {
+    name: item.name,
+    category: item.category,
+    quantity: item.quantity,
+    unit: item.unit,
+    date_added: item.dateAdded || null,
+    expiry_date: item.expiryDate,
+    notes: item.notes,
+  };
+}
+```
+
+The `formatDateISO` helper converts a MySQL `DATE` object to a `YYYY-MM-DD` string. MySQL `DATE` columns return JavaScript `Date` objects via `mysql2`; convert with `date.toISOString().split("T")[0]`.
+
+### REST API Routes (`server/src/routes/items.ts`)
+
+All routes are mounted at `/api/items` in `server/src/index.ts`.
+
+| Method | Path             | Description          | Request Body                    | Response                    |
+|--------|------------------|----------------------|---------------------------------|-----------------------------|
+| GET    | `/api/items`     | List all items       | —                               | `FreezerItem[]`             |
+| POST   | `/api/items`     | Create a new item    | `Omit<FreezerItem, "id">`       | `FreezerItem` (with new id) |
+| PUT    | `/api/items/:id` | Update an existing item | `Partial<Omit<FreezerItem, "id">>` | `FreezerItem` (updated)  |
+| DELETE | `/api/items/:id` | Delete an item       | —                               | `{ success: true }`         |
+
+#### GET `/api/items`
+
+```ts
+router.get("/", async (_req, res) => {
+  const [rows] = await pool.query("SELECT * FROM items ORDER BY expiry_date ASC");
+  const items = (rows as any[]).map(rowToItem);
+  res.json(items);
+});
+```
+
+Returns all items sorted by expiry date (soonest first). No pagination — a home freezer has 10-50 items.
+
+#### POST `/api/items`
+
+```ts
+router.post("/", async (req, res) => {
+  const body = req.body as Omit<FreezerItem, "id">;
+  // Validate required fields
+  if (!body.name || !body.category || !body.expiryDate) {
+    res.status(400).json({ error: "name, category, and expiryDate are required" });
+    return;
+  }
+  const row = itemToRow(body);
+  const [result] = await pool.query("INSERT INTO items SET ?", [row]);
+  const insertId = (result as any).insertId;
+  // Fetch the created item to return it with its ID
+  const [rows] = await pool.query("SELECT * FROM items WHERE id = ?", [insertId]);
+  res.status(201).json(rowToItem((rows as any[])[0]));
+});
+```
+
+#### PUT `/api/items/:id`
+
+```ts
+router.put("/:id", async (req, res) => {
+  const id = Number(req.params.id);
+  const body = req.body as Partial<Omit<FreezerItem, "id">>;
+  // Build update object with only provided fields
+  const updates: Record<string, any> = {};
+  if (body.name !== undefined) updates.name = body.name;
+  if (body.category !== undefined) updates.category = body.category;
+  if (body.quantity !== undefined) updates.quantity = body.quantity;
+  if (body.unit !== undefined) updates.unit = body.unit;
+  if (body.dateAdded !== undefined) updates.date_added = body.dateAdded || null;
+  if (body.expiryDate !== undefined) updates.expiry_date = body.expiryDate;
+  if (body.notes !== undefined) updates.notes = body.notes;
+
+  if (Object.keys(updates).length === 0) {
+    res.status(400).json({ error: "No fields to update" });
+    return;
+  }
+
+  const [result] = await pool.query("UPDATE items SET ? WHERE id = ?", [updates, id]);
+  if ((result as any).affectedRows === 0) {
+    res.status(404).json({ error: "Item not found" });
+    return;
+  }
+  const [rows] = await pool.query("SELECT * FROM items WHERE id = ?", [id]);
+  res.json(rowToItem((rows as any[])[0]));
+});
+```
+
+#### DELETE `/api/items/:id`
+
+```ts
+router.delete("/:id", async (req, res) => {
+  const id = Number(req.params.id);
+  const [result] = await pool.query("DELETE FROM items WHERE id = ?", [id]);
+  if ((result as any).affectedRows === 0) {
+    res.status(404).json({ error: "Item not found" });
+    return;
+  }
+  res.json({ success: true });
+});
+```
+
+### Error Handling
+
+All route handlers are wrapped in try/catch. Errors return a consistent JSON shape:
+
+```ts
+{ "error": "Human-readable error message" }
+```
+
+HTTP status codes:
+- `200` — success (GET, PUT, DELETE)
+- `201` — created (POST)
+- `400` — validation error (missing required fields, no update fields)
+- `404` — item not found (PUT, DELETE with invalid ID)
+- `500` — server error (database connection failure, unexpected errors)
+
+A generic error handler middleware catches unhandled errors:
+
+```ts
+app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
+  console.error("Unhandled error:", err);
+  res.status(500).json({ error: "Internal server error" });
+});
+```
+
+### Server Startup (`server/src/index.ts`)
+
+Update the existing server entry point to:
+1. Import and call `initDb()` before starting the listener.
+2. Mount the items router at `/api/items`.
+3. Add the error handler middleware.
+
+```ts
+import "dotenv/config";
+import express from "express";
+import cors from "cors";
+import identifyRouter from "./routes/identify.js";
+import itemsRouter from "./routes/items.js";
+import { initDb } from "./lib/init-db.js";
+
+const app = express();
+const PORT = process.env.PORT || 3001;
+
+app.use(cors({ origin: "http://localhost:5173" }));
+app.use(express.json({ limit: "10mb" }));
+
+app.use("/api/identify-food", identifyRouter);
+app.use("/api/items", itemsRouter);
+
+// Error handler
+app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  console.error("Unhandled error:", err);
+  res.status(500).json({ error: "Internal server error" });
+});
+
+async function start() {
+  await initDb();
+  app.listen(PORT, () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+  });
+}
+
+start().catch((err) => {
+  console.error("Failed to start server:", err);
+  process.exit(1);
+});
+```
+
+### Dependencies
+
+Add `mysql2` to `server/package.json`:
+
+```bash
+cd server && pnpm add mysql2
+```
+
+No additional dependencies needed. The server already has `express`, `cors`, `dotenv`, and `typescript`.
+
+### Vite Proxy Configuration
+
+Update `client/vite.config.ts` to proxy `/api` requests to the backend during development:
+
+```ts
+export default defineConfig({
+  plugins: [react()],
+  server: {
+    proxy: {
+      "/api": {
+        target: "http://localhost:3001",
+        changeOrigin: true,
+      },
+    },
+  },
+});
+```
+
+This eliminates CORS issues in development and matches the production deployment pattern where both frontend and backend are served from the same origin.
+
+### Frontend Migration (`useItems.ts`)
+
+The `useItems` hook is rewritten to use `fetch` calls. The hook's public API (return type) stays identical so no component changes are needed for CRUD operations. New additions: `loading` and `error` state.
+
+```ts
+export function useItems() {
+  const [items, setItems] = useState<FreezerItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  // ...searchQuery, selectedCategory, sortBy state unchanged
+
+  // Initial fetch
+  useEffect(() => {
+    fetchItems();
+  }, []);
+
+  async function fetchItems() {
+    try {
+      setError(null);
+      const res = await fetch("/api/items");
+      if (!res.ok) throw new Error("Failed to load items");
+      const data = await res.json();
+      setItems(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load items");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function addItem(item: Omit<FreezerItem, "id">) {
+    const res = await fetch("/api/items", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(item),
+    });
+    if (!res.ok) throw new Error("Failed to add item");
+    const created = await res.json();
+    setItems((prev) => [...prev, created]);
+  }
+
+  async function updateItem(id: number, updates: Partial<Omit<FreezerItem, "id">>) {
+    const res = await fetch(`/api/items/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updates),
+    });
+    if (!res.ok) throw new Error("Failed to update item");
+    const updated = await res.json();
+    setItems((prev) => prev.map((item) => (item.id === id ? updated : item)));
+  }
+
+  async function deleteItem(id: number) {
+    const res = await fetch(`/api/items/${id}`, { method: "DELETE" });
+    if (!res.ok) throw new Error("Failed to delete item");
+    setItems((prev) => prev.filter((item) => item.id !== id));
+  }
+
+  return {
+    items: filteredItems,
+    allItems: items,
+    loading,       // NEW
+    error,         // NEW
+    searchQuery, setSearchQuery,
+    selectedCategory, setSelectedCategory,
+    sortBy, setSortBy,
+    addItem,       // Now async
+    addItems,      // Now async (calls POST for each item)
+    updateItem,    // Now async
+    deleteItem,    // Now async
+  };
+}
+```
+
+Key changes:
+- **`loading`**: `true` during initial fetch, `false` after. Components show a spinner while loading.
+- **`error`**: `string | null`. Set on fetch failure, cleared on retry. Components show an error banner.
+- **CRUD functions become async**: They now return `Promise<void>`. Callers should handle errors (try/catch in the form submit handler to show validation feedback).
+- **Optimistic vs. pessimistic updates**: Use pessimistic updates (wait for server response before updating local state). This is simpler and avoids inconsistency. The latency is negligible for a local MySQL server.
+- **Remove localStorage**: Delete the `STORAGE_KEY` constant, `loadItems()`, and the `useEffect` that persists to localStorage.
+- **Remove mock data import**: Delete `import { mockItems }` and the `data/mock-items.ts` file.
+- **Remove `nextId` counter**: The server assigns IDs via AUTO_INCREMENT.
+
+### Loading & Error States in Components
+
+Components that consume `useItems` need to handle the new `loading` and `error` states.
+
+#### `App.tsx`
+
+```tsx
+const { loading, error, ...rest } = useItems();
+
+// Show loading spinner during initial load
+if (loading) {
+  return (
+    <div className="app-loading">
+      <div className="spinner" />
+      <p>Loading your freezer...</p>
+    </div>
+  );
+}
+```
+
+#### Error Banner
+
+A persistent error banner at the top of the app when `error` is non-null:
+
+```tsx
+{error && (
+  <div className="error-banner" role="alert">
+    <p>{error}</p>
+    <button onClick={fetchItems}>Retry</button>
+  </div>
+)}
+```
+
+#### CRUD Error Handling
+
+Individual CRUD operations (add, update, delete) can fail after the initial load succeeds. These errors are handled locally in the component that triggers the action:
+
+```tsx
+// In ItemForm submit handler:
+try {
+  await addItem(newItem);
+  navigate({ kind: "list" });
+} catch (err) {
+  setFormError("Failed to save item. Please try again.");
+}
+```
+
+#### Empty State (DB Empty)
+
+When the database has no items and loading is complete, the existing empty state UI ("Your freezer is empty") already handles this correctly. No changes needed — the items array will simply be empty.
+
+### File Changes Summary
+
+| File | Change |
+|------|--------|
+| `server/src/lib/database.ts` | **New file** — mysql2 connection pool |
+| `server/src/lib/init-db.ts` | **New file** — CREATE TABLE IF NOT EXISTS |
+| `server/src/routes/items.ts` | **New file** — CRUD routes for /api/items |
+| `server/src/index.ts` | Import initDb + items router, add error handler, async start |
+| `server/package.json` | Add `mysql2` dependency |
+| `server/.env.example` | Add DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME |
+| `client/vite.config.ts` | Add proxy config for /api |
+| `client/src/hooks/useItems.ts` | Replace localStorage with fetch, add loading/error state |
+| `client/src/App.tsx` | Handle loading/error from useItems, pass to components |
+| `client/src/App.css` | Add loading spinner, error banner styles |
+| `client/src/data/mock-items.ts` | **Delete** |
+
+### What NOT to Build
+
+Per CLAUDE.md explicit non-goals:
+- No ORM (use raw `mysql2` queries)
+- No migration tool (use `CREATE TABLE IF NOT EXISTS`)
+- No authentication or multi-user support
+- No pagination (item count is small)
+- No WebSocket/real-time updates
+- No data export/import API endpoints
+- No batch delete/update endpoints

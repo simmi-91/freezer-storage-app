@@ -3,6 +3,8 @@ import { getExpiryStatus, formatDate } from "../utils/dates";
 
 interface DashboardProps {
   items: FreezerItem[];
+  loading: boolean;
+  error: string | null;
   onNavigateToList: (options?: { category?: Category; sort?: "expiryDate" }) => void;
   onNavigateToAdd: () => void;
   onEdit: (id: number) => void;
@@ -13,11 +15,34 @@ const MAX_EXPIRING_ROWS = 10;
 
 export function Dashboard({
   items,
+  loading,
+  error,
   onNavigateToList,
   onNavigateToAdd,
   onEdit,
   onDelete,
 }: DashboardProps) {
+  if (loading) {
+    return (
+      <section aria-label="Dashboard">
+        <div className="loading-spinner" aria-label="Loading dashboard">
+          <div className="spinner" />
+          <p>Loading dashboard...</p>
+        </div>
+      </section>
+    );
+  }
+
+  if (error) {
+    return (
+      <section aria-label="Dashboard">
+        <div className="error-message" role="alert">
+          <p>Failed to load items: {error}</p>
+        </div>
+      </section>
+    );
+  }
+
   const expiredItems = items
     .filter((item) => getExpiryStatus(item.expiryDate).status === "expired")
     .sort((a, b) => b.expiryDate.localeCompare(a.expiryDate));

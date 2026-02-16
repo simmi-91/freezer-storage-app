@@ -423,3 +423,176 @@ These colors appear as a small badge/dot on item cards and in the expiry text. (
 13. **Existing components** (SearchBar, CategoryFilter, SortControl, ItemCard, ItemForm, useItems) are reused without modification
 14. **Dashboard component** computes all stats from `allItems` -- no new hooks or state needed
 15. **Mobile-first responsive** -- same 768px breakpoint as existing code, with 480px added for stat card stacking
+
+---
+
+## 8. Phase 2 — Loading, Error, and Empty States
+
+Phase 2 replaces localStorage with a MySQL database accessed via a REST API. This introduces asynchronous data fetching, which means the UI must handle three new states: loading, error, and server-driven empty.
+
+### 8.1 Loading States
+
+#### Initial Load (App Startup)
+
+When the app first opens, it fetches all items from `GET /api/items`. During this fetch, the entire app shows a centered loading indicator.
+
+**Visual design:**
+- A simple CSS spinner (no third-party library) centered vertically and horizontally
+- Below the spinner: "Loading your freezer..." in `color: var(--color-text-secondary)`
+- The header renders normally (app title visible), but the main content area shows only the spinner
+- No sidebar/bottom tabs during loading — they appear once data is ready
+
+**Implementation:**
+```tsx
+// In App.tsx:
+if (loading) {
+  return (
+    <>
+      <header className="app-header">...</header>
+      <main className="app-main">
+        <div className="loading-container">
+          <div className="spinner" aria-label="Loading" />
+          <p className="loading-text">Loading your freezer...</p>
+        </div>
+      </main>
+    </>
+  );
+}
+```
+
+**CSS for spinner:**
+```css
+.loading-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 300px;
+  gap: var(--space-md);
+}
+
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid var(--color-border);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.loading-text {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+```
+
+#### CRUD Operation Loading
+
+Individual add/update/delete operations do NOT show a global loading spinner. Instead:
+- **Add item**: The "Save" button in `ItemForm` shows "Saving..." and is disabled during the request. This prevents double-submission.
+- **Update item**: Same pattern as add — the save button shows "Saving..." while the PUT request is in flight.
+- **Delete item**: The delete confirmation dialog's "Delete" button shows "Deleting..." and is disabled during the request.
+- **Quantity stepper**: The +/- buttons on `ItemCard` are disabled while the update request is in flight. No spinner — the button simply becomes unresponsive momentarily.
+
+### 8.2 Error States
+
+#### Connection Error (Initial Load Failure)
+
+If the initial `GET /api/items` fails (server down, network error, database unreachable), the app shows a full-page error state instead of the item list.
+
+**Visual design:**
+- Centered message: "Could not connect to the server"
+- Subtext: "Make sure the server is running on port 3001 and the database is accessible."
+- A "Retry" button (`btn btn-primary`) that calls `fetchItems()` again
+- Uses `role="alert"` for accessibility
+
+```
++---------------------------------------------+
+|  Header: Freezer Tracker                     |
++---------------------------------------------+
+|                                              |
+|        Could not connect to the server       |
+|                                              |
+|  Make sure the server is running on port     |
+|  3001 and the database is accessible.        |
+|                                              |
+|              [ Retry ]                       |
+|                                              |
++---------------------------------------------+
+```
+
+#### CRUD Operation Errors
+
+When an individual add/update/delete operation fails after the initial load succeeded:
+
+- **Add item fails**: The form stays open. An inline error message appears above the form buttons: "Failed to save item. Please try again." in red (`color: var(--color-expired)`). The user can retry by clicking Save again.
+- **Update item fails**: Same pattern as add — form stays open with inline error.
+- **Delete item fails**: The confirmation dialog stays open with an error message. The user can retry or cancel.
+- **Quantity stepper fails**: A brief inline error message appears below the item card for 3 seconds, then fades. The local quantity reverts to the previous value.
+
+**Error message styling:**
+```css
+.form-error {
+  color: var(--color-expired);
+  font-size: var(--font-size-sm);
+  padding: var(--space-sm) 0;
+}
+
+.error-banner {
+  background-color: #FEF2F2;
+  border: 1px solid #FECACA;
+  border-radius: var(--radius-md);
+  padding: var(--space-sm) var(--space-md);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  margin-bottom: var(--space-md);
+}
+
+.error-banner p {
+  color: var(--color-expired);
+  font-size: var(--font-size-sm);
+  margin: 0;
+}
+```
+
+### 8.3 Empty State (Database Empty)
+
+When the database has zero items (fresh install or all items deleted), the existing empty-state UI components already handle this correctly:
+
+- **Dashboard**: Shows "Your freezer is empty" with "Add your first item to start tracking" and an Add Item button. Stat cards show "0" for all values.
+- **Item List**: Shows "Your freezer is empty" with Add Item CTA.
+
+No new empty state design is needed. The `items` array from `useItems` will simply be `[]` after a successful fetch, and existing empty state rendering handles it.
+
+### 8.4 State Transitions
+
+```
+App Start
+  |
+  v
+[Loading] --fetch ok--> [Ready: items loaded, normal UI]
+  |                          |
+  fetch fail                 CRUD operation
+  |                          |
+  v                     +----+----+
+[Error: full page]      |         |
+  |                  success    fail
+  Retry click           |         |
+  |                  update    show inline
+  v                  local     error message
+[Loading]            state
+```
+
+### 8.5 Accessibility for Loading/Error States
+
+- The loading spinner has `aria-label="Loading"` and uses `role="status"` with `aria-live="polite"`
+- Error messages use `role="alert"` so screen readers announce them immediately
+- The Retry button receives focus automatically when an error state appears
+- Disabled buttons during CRUD operations have `aria-disabled="true"` (not just the `disabled` attribute) for better screen reader support
+- Error text has sufficient color contrast (red on white background meets WCAG AA)

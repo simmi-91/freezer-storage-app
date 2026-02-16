@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, type ChangeEvent } from "react";
 import type { FreezerItem, Category } from "../types";
 import { CATEGORIES, CATEGORY_SHELF_LIFE } from "../types";
 import { addMonths } from "../utils/dates";
+import { API_BASE } from "../utils/api";
 
 interface PhotoCaptureProps {
     onAddItems: (items: Omit<FreezerItem, "id">[]) => void;
@@ -69,7 +70,7 @@ export function PhotoCapture({ onAddItems, onCancel }: PhotoCaptureProps) {
             setStep("loading");
 
             try {
-                const response = await fetch("/api/identify-food", {
+                const response = await fetch(`${API_BASE}/api/identify-food`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ imageBase64: base64 }),

@@ -13,6 +13,8 @@ function App() {
   const {
     items,
     allItems,
+    loading,
+    error,
     searchQuery,
     setSearchQuery,
     selectedCategory,
@@ -123,6 +125,8 @@ function App() {
           {viewMode.kind === "dashboard" && (
             <Dashboard
               items={allItems}
+              loading={loading}
+              error={error}
               onNavigateToList={handleNavigateToList}
               onNavigateToAdd={() => navigate({ kind: "add" })}
               onEdit={handleEdit}
@@ -136,6 +140,8 @@ function App() {
                 items={items}
                 allItems={allItems}
                 totalCount={allItems.length}
+                loading={loading}
+                error={error}
                 searchQuery={searchQuery}
                 onSearchChange={setSearchQuery}
                 selectedCategory={selectedCategory}

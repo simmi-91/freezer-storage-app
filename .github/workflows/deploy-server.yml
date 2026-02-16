@@ -1,0 +1,86 @@
+name: Deploy Freezer Server
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "server/**"
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: "22"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - name: Install dependencies
+        working-directory: ./server
+        run: pnpm install --frozen-lockfile
+
+      - name: Build TypeScript
+        working-directory: ./server
+        run: pnpm build
+
+      - name: Deploy server files
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          source: "server/dist/*,server/package.json,server/pnpm-lock.yaml"
+          target: "/tmp/freezer-deploy-server"
+          strip_components: 1
+          rm: true
+
+      - name: Execute deployment script on server
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            cd /var/www/3lin/server/
+
+            if [ -d "freezer_old" ]; then
+              sudo rm -rf freezer_old
+              echo "Removed freezer_old"
+            fi
+
+            if [ -d "freezer" ]; then
+              sudo mv freezer freezer_old
+              echo "Renamed freezer to freezer_old"
+            fi
+
+            sudo mv /tmp/freezer-deploy-server freezer
+
+            cd freezer
+            USER=${{ secrets.DEPLOY_RUN_AS_USER }}
+
+            sudo chown -R $USER:$USER .
+
+            echo "${{ secrets.FREEZER_ENV_FILE }}" > .env
+
+            sudo -u $USER pnpm install --prod
+
+            sudo chown -R www-data:www-data /var/www/3lin/server/freezer
+            sudo chmod -R 755 /var/www/3lin/server/freezer
+
+            sudo -u $USER pm2 stop freezer || true
+            sudo -u $USER pm2 delete freezer || true
+            sudo -u $USER pm2 start dist/index.js --name freezer
+            sudo -u $USER pm2 save
+
+            echo "Server deployment complete!"
+            sudo -u $USER pm2 status

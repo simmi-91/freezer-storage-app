@@ -8,6 +8,8 @@ interface ItemListProps {
   items: FreezerItem[];
   allItems: FreezerItem[];
   totalCount: number;
+  loading: boolean;
+  error: string | null;
   searchQuery: string;
   onSearchChange: (query: string) => void;
   selectedCategory: Category | "All";
@@ -24,6 +26,8 @@ export function ItemList({
   items,
   allItems,
   totalCount,
+  loading,
+  error,
   searchQuery,
   onSearchChange,
   selectedCategory,
@@ -40,6 +44,27 @@ export function ItemList({
   function handleClearFilters() {
     onSearchChange("");
     onCategoryChange("All");
+  }
+
+  if (loading) {
+    return (
+      <section>
+        <div className="loading-spinner" aria-label="Loading items">
+          <div className="spinner" />
+          <p>Loading items...</p>
+        </div>
+      </section>
+    );
+  }
+
+  if (error) {
+    return (
+      <section>
+        <div className="error-message" role="alert">
+          <p>Failed to load items: {error}</p>
+        </div>
+      </section>
+    );
   }
 
   return (
