@@ -8,9 +8,22 @@ import { initDb } from "./lib/init-db.js";
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+const corsOrigin = process.env.FRONTEND_ORIGINS
+    ? process.env.FRONTEND_ORIGINS.split(",").map((s) => s.trim())
+    : ["http://localhost:5173", "http://localhost:5174"];
+
 app.use(
     cors({
-        origin: process.env.CORS_ORIGIN || "http://localhost:5173",
+        origin: (origin, callback) => {
+            // Allow requests with no origin (server-to-server, curl, etc.)
+            if (!origin) return callback(null, true);
+            if (corsOrigin.includes(origin)) {
+                callback(null, true);
+            } else {
+                callback(new Error("Not allowed by CORS"));
+            }
+        },
+        credentials: true,
     })
 );
 
