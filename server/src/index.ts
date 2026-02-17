@@ -5,7 +5,7 @@ import identifyRouter from "./routes/identify.js";
 import itemsRouter from "./routes/items.js";
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.EXPRESS_PORT || 3001;
 
 const corsOrigin = process.env.FRONTEND_ORIGINS
     ? process.env.FRONTEND_ORIGINS.split(",").map((s) => s.trim())

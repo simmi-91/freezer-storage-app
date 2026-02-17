@@ -1,5 +1,5 @@
 import { Router, Request, Response } from "express";
-import pool from "../lib/database.js";
+import { getPool } from "../lib/database.js";
 import type { RowDataPacket, ResultSetHeader } from "mysql2";
 
 const router: Router = Router();
@@ -41,7 +41,7 @@ function rowToItem(row: FreezerItemRow) {
 // GET /api/items
 router.get("/", async (_req: Request, res: Response): Promise<void> => {
     try {
-        const [rows] = await pool.execute<FreezerItemRow[]>(
+        const [rows] = await getPool().execute<FreezerItemRow[]>(
             "SELECT * FROM freezer_items ORDER BY expiry_date ASC"
         );
         res.json(rows.map(rowToItem));
@@ -61,13 +61,13 @@ router.post("/", async (req: Request, res: Response): Promise<void> => {
             return;
         }
 
-        const [result] = await pool.execute<ResultSetHeader>(
+        const [result] = await getPool().execute<ResultSetHeader>(
             `INSERT INTO freezer_items (name, category, quantity, unit, date_added, expiry_date, notes)
              VALUES (?, ?, ?, ?, ?, ?, ?)`,
             [name, category, quantity, unit, dateAdded || null, expiryDate, notes || ""]
         );
 
-        const [rows] = await pool.execute<FreezerItemRow[]>(
+        const [rows] = await getPool().execute<FreezerItemRow[]>(
             "SELECT * FROM freezer_items WHERE id = ?",
             [result.insertId]
         );
@@ -102,7 +102,7 @@ router.put("/:id", async (req: Request, res: Response): Promise<void> => {
         }
 
         values.push(id);
-        const [result] = await pool.execute<ResultSetHeader>(
+        const [result] = await getPool().execute<ResultSetHeader>(
             `UPDATE freezer_items SET ${fields.join(", ")} WHERE id = ?`,
             values
         );
@@ -112,7 +112,7 @@ router.put("/:id", async (req: Request, res: Response): Promise<void> => {
             return;
         }
 
-        const [rows] = await pool.execute<FreezerItemRow[]>(
+        const [rows] = await getPool().execute<FreezerItemRow[]>(
             "SELECT * FROM freezer_items WHERE id = ?",
             [id]
         );
@@ -128,7 +128,7 @@ router.put("/:id", async (req: Request, res: Response): Promise<void> => {
 router.delete("/:id", async (req: Request, res: Response): Promise<void> => {
     try {
         const { id } = req.params;
-        const [result] = await pool.execute<ResultSetHeader>(
+        const [result] = await getPool().execute<ResultSetHeader>(
             "DELETE FROM freezer_items WHERE id = ?",
             [id]
         );
