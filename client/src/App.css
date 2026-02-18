@@ -670,6 +670,30 @@ textarea.form-input {
   background-color: var(--color-bg);
 }
 
+/* --- Translate Button & Suggestions --- */
+.translate-row {
+  display: flex;
+  gap: var(--space-xs);
+  align-items: stretch;
+}
+
+.translate-row .form-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.btn-translate {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.translation-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  margin-top: var(--space-xs);
+}
+
 /* --- Autocomplete Dropdown --- */
 .autocomplete-wrapper {
   position: relative;

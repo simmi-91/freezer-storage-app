@@ -3,6 +3,7 @@ import express from "express";
 import cors from "cors";
 import identifyRouter from "./routes/identify.js";
 import itemsRouter from "./routes/items.js";
+import translateRouter from "./routes/translate.js";
 
 const app = express();
 const PORT = process.env.EXPRESS_PORT || 3001;
@@ -31,6 +32,7 @@ app.use(express.json({ limit: "10mb" }));
 
 app.use("/api/identify-food", identifyRouter);
 app.use("/api/items", itemsRouter);
+app.use("/api/translate-name", translateRouter);
 
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);

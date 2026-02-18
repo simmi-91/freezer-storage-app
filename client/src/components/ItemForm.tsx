@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useMemo, type FormEvent } from "react";
 import type { FreezerItem, FreezerItemFormData, Category } from "../types";
 import { CATEGORIES, CATEGORY_SHELF_LIFE } from "../types";
 import { addMonths } from "../utils/dates";
+import { API_BASE } from "../utils/api";
 
 interface ItemFormProps {
     mode: "add" | "edit";
@@ -88,6 +89,8 @@ export function ItemForm({
         buildInitialData(mode, item)
     );
     const [errors, setErrors] = useState<ValidationErrors>({});
+    const [translating, setTranslating] = useState(false);
+    const [translations, setTranslations] = useState<string[]>([]);
     const expiryManuallySet = useRef(mode === "edit");
 
     // Autocomplete state (add mode only)
@@ -167,6 +170,27 @@ export function ItemForm({
         }
     }
 
+    async function handleTranslate() {
+        const name = formData.name.trim();
+        if (!name) return;
+        setTranslating(true);
+        setTranslations([]);
+        try {
+            const res = await fetch(`${API_BASE}/api/translate-name`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ name }),
+            });
+            if (!res.ok) throw new Error("Translation failed");
+            const data = await res.json();
+            setTranslations(data.suggestions ?? []);
+        } catch {
+            setTranslations([]);
+        } finally {
+            setTranslating(false);
+        }
+    }
+
     function handleCategoryChange(category: Category) {
         updateField("category", category);
         if (!expiryManuallySet.current) {
@@ -217,6 +241,7 @@ export function ItemForm({
                                 Name <span aria-hidden="true">*</span>
                             </label>
                             <div className="autocomplete-wrapper" ref={autocompleteRef}>
+                                <div className="translate-row">
                                 <input
                                     id="item-name"
                                     className={inputClass("name", errors)}
@@ -224,6 +249,7 @@ export function ItemForm({
                                     value={formData.name}
                                     onChange={(e) => {
                                         updateField("name", e.target.value);
+                                        setTranslations([]);
                                         if (mode === "add") {
                                             setShowSuggestions(true);
                                             setActiveIndex(-1);
@@ -266,6 +292,33 @@ export function ItemForm({
                                         activeIndex >= 0 ? `suggestion-${activeIndex}` : undefined
                                     }
                                 />
+                                {formData.name.trim() && (
+                                    <button
+                                        type="button"
+                                        className="btn btn-ghost btn-translate"
+                                        onClick={handleTranslate}
+                                        disabled={translating}
+                                        aria-label="Translate name to English">
+                                        {translating ? "…" : "Translate"}
+                                    </button>
+                                )}
+                                </div>
+                                {translations.length > 0 && (
+                                    <div className="translation-suggestions">
+                                        {translations.map((t) => (
+                                            <button
+                                                key={t}
+                                                type="button"
+                                                className="btn-shortcut"
+                                                onClick={() => {
+                                                    updateField("name", t);
+                                                    setTranslations([]);
+                                                }}>
+                                                {t}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
                                 {showSuggestions && suggestions.length > 0 && (
                                     <ul
                                         id="name-suggestions"

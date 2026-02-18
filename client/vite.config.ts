@@ -6,6 +6,7 @@ export default defineConfig({
   base: '/freezer/',
   plugins: [react()],
   server: {
+    host: 'localhost',
     proxy: {
       '/api': {
         target: 'http://localhost:3001',
