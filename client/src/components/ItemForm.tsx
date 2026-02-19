@@ -90,7 +90,7 @@ export function ItemForm({
     );
     const [errors, setErrors] = useState<ValidationErrors>({});
     const [translating, setTranslating] = useState(false);
-    const [translations, setTranslations] = useState<string[]>([]);
+    const [translations, setTranslations] = useState<{ name: string; category: string }[]>([]);
     const expiryManuallySet = useRef(mode === "edit");
 
     // Autocomplete state (add mode only)
@@ -307,14 +307,15 @@ export function ItemForm({
                                     <div className="translation-suggestions">
                                         {translations.map((t) => (
                                             <button
-                                                key={t}
+                                                key={t.name}
                                                 type="button"
                                                 className="btn-shortcut"
                                                 onClick={() => {
-                                                    updateField("name", t);
+                                                    updateField("name", t.name);
+                                                    handleCategoryChange(t.category as Category);
                                                     setTranslations([]);
                                                 }}>
-                                                {t}
+                                                {t.name}
                                             </button>
                                         ))}
                                     </div>
